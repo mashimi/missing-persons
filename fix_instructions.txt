@@ -81,3 +81,8 @@
   * Register the Signal bot number; create the first admin user (bcrypt + TOTP)
   * Ship drafts → verify → publish real cases from the admin queue
 
+12. Fix Leaflet map teardown race in MapView (runtime crash: "Cannot read properties of undefined (reading '_leaflet_pos')")
+- Goal: Eliminate the runtime crash when scroll-wheel zooming on the map, and stop the map from being destroyed/rebuilt on every parent re-render.
+- Constraints: Leaflet must keep being lazy-imported inside useEffect (it touches `window` at import time → would break the static prerender, see adaptation note in task 11); the public site stays fully static (`output: "export"`); markers must still update when the `persons` prop changes (home page: [] → fetched data; person detail: single case); no changes to the component's usage in page.tsx or persons/[id]/page.tsx.
+- Expected behavior: The Leaflet map is created exactly once per component mount and destroyed exactly once on unmount. Marker updates happen through a Leaflet LayerGroup (clearLayers + re-add) instead of tearing down the whole map. `persons={[person]}` (a new array literal on every render of the detail page) no longer triggers map re-initialization — only a cheap marker redraw — so no async import/teardown race window exists for wheel/zoom events to hit a half-torn-down map.
+- Files to modify: src/components/MapView.tsx
