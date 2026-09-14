@@ -1,0 +1,17 @@
+# tor/torrc — Tor hidden service configuration (PART 7.5)
+# Deploy on the mirror server; the .onion hostname appears in
+# /var/lib/tor/registry/hostname after first start.
+#
+# The public static site is served on 127.0.0.1:3000 (e.g. `npx serve out`
+# or nginx). Tor proxies the .onion to it.
+
+SocksPort 0
+SafeLogging 1
+Log notice file /var/log/tor/notices.log
+
+HiddenServiceDir /var/lib/tor/registry/
+HiddenServicePort 80 127.0.0.1:3000
+
+# Optional: extra intro-point redundancy under censorship pressure
+NumIntroPoints 6
+NumIntroductionPoints 6

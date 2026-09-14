@@ -1,0 +1,46 @@
+# docker-compose.signal.yml
+# PART 11.2 — Signal tip line (can run alongside the main stack).
+# Start with:  docker compose -f docker-compose.signal.yml up -d
+
+version: "3.8"
+
+services:
+  signal-cli-rest-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    volumes:
+      - signal-data:/home/.local/share/signal-cli
+    ports:
+      - "127.0.0.1:8080:8080"   # local only — never expose publicly
+    restart: unless-stopped
+
+  signal-bot:
+    build: ./bot
+    depends_on:
+      - signal-cli-rest-api
+    environment:
+      SIGNAL_API: http://signal-cli-rest-api:8080
+      BOT_NUMBER: ${BOT_NUMBER}
+      FASTAPI_URL: ${FASTAPI_URL:-http://host.docker.internal:8000}
+      PGP_PUBLIC_KEY_FILE: /keys/server-pub.asc
+      RATE_LIMIT_PER_HOUR: "10"
+    volumes:
+      - ./bot/keys:/keys:ro
+      - bot-data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  signal-data:
+  bot-data:
+
+# PART 11.3 — Register the bot number (one-time, interactive):
+#   1. Open:      http://127.0.0.1:8080/v1/qrcodes/link  (or use /v1/register)
+#   2. Register:  curl -X POST http://127.0.0.1:8080/v1/register \
+#                   -H 'Content-Type: application/json' \
+#                   -d '{"number": "+2557XXXXXXXX"}'
+#   3. Verify:    curl -X POST http://127.0.0.1:8080/v1/verify \
+#                   -H 'Content-Type: application/json' \
+#                   -d '{"number": "+2557XXXXXXXX", "pin": "123-456"}'
+#   4. Copy the real PGP public key into ./bot/keys/server-pub.asc
+#   5. docker compose -f docker-compose.signal.yml up -d signal-bot

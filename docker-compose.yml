@@ -1,0 +1,115 @@
+# docker-compose.yml
+# PART 14 — Full stack: postgres(+PostGIS), redis, FastAPI, Signal bot,
+# Celery OSINT worker + beat, and a Tor hidden service mirror.
+#
+# Start:        docker compose up -d
+# Migrations:   applied automatically on first postgres start
+#               (migrations/ → docker-entrypoint-initdb.d)
+# Signal reg:   see docker-compose.signal.yml comments (PART 11.3)
+# .onion host:  docker compose exec tor cat /var/lib/tor/registry/hostname
+
+version: "3.8"
+
+services:
+  # ── Core ───────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:15-3.4
+    environment:
+      POSTGRES_DB: missing_persons
+      POSTGRES_USER: mp
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+
+  fastapi:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql://mp:${DB_PASSWORD}@postgres/missing_persons
+      REDIS_URL: redis://redis:6379/0
+      PGP_PRIVATE_KEY_FILE: /keys/server-priv.asc
+      PGP_PASSPHRASE: ${PGP_PASSPHRASE}
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./api/keys:/keys:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  # ── Signal tip line ────────────────────────────────
+  signal-cli-rest-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    volumes:
+      - signal-data:/home/.local/share/signal-cli
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+  signal-bot:
+    build: ./bot
+    depends_on:
+      - signal-cli-rest-api
+      - fastapi
+    environment:
+      SIGNAL_API: http://signal-cli-rest-api:8080
+      FASTAPI_URL: http://fastapi:8000
+      BOT_NUMBER: ${BOT_NUMBER}
+      PGP_PUBLIC_KEY_FILE: /keys/server-pub.asc
+    volumes:
+      - ./bot/keys:/keys:ro
+      - bot-data:/data
+    restart: unless-stopped
+
+  # ── OSINT enrichment (PART 13) ─────────────────────
+  celery-worker:
+    build: ./osint
+    command: celery -A osint.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://mp:${DB_PASSWORD}@postgres/missing_persons
+      REDIS_URL: redis://redis:6379/0
+      SIGNAL_API: http://signal-cli-rest-api:8080
+      BOT_NUMBER: ${BOT_NUMBER}
+      ALERT_SIGNAL_NUMBERS: ${ALERT_SIGNAL_NUMBERS}
+    depends_on:
+      - postgres
+      - redis
+      - signal-cli-rest-api
+    restart: unless-stopped
+
+  celery-beat:
+    build: ./osint
+    command: celery -A osint.celery_app beat --loglevel=info
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── Tor hidden service mirror (PART 7.5) ───────────
+  tor:
+    image: dperson/torproxy:latest
+    volumes:
+      - ./tor/torrc:/etc/tor/torrc:ro
+      - tor-data:/var/lib/tor
+    depends_on:
+      - fastapi
+    ports:
+      - "127.0.0.1:9050:9050"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  signal-data:
+  bot-data:
+  tor-data:

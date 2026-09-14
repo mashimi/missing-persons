@@ -1,0 +1,47 @@
+{
+  "name": "Missing Persons Registry – Tanzania",
+  "short_name": "Missing TZ",
+  "description": "A censorship-resistant registry documenting enforced disappearances in Tanzania.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f9fafb",
+  "theme_color": "#1e3a8a",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["news", "social", "government"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "The Registry",
+      "url": "/persons/",
+      "description": "Browse all documented cases"
+    },
+    {
+      "name": "Report a case",
+      "url": "/submit/",
+      "description": "Submit an encrypted report"
+    }
+  ]
+}

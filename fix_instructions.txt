@@ -1,0 +1,83 @@
+# fix_instructions.txt — Implementation instructions for the Missing Persons Registry (Tanzania)
+# Generated from: infor.md (master spec, 3,890 lines). Target root: c:\missing-persons-tz
+
+1. Next.js Static Registry Site (infor.md PARTS 1, 6, 7, 8, 9, 10)
+- Goal: A censorship-resistant static-export Next.js site (TypeScript, Tailwind, App Router, src dir) with an interactive Leaflet map of disappearance locations, a searchable/filterable case registry, per-person profile pages, an about page, and a PGP-encrypted "report a disappearance" form. Multilingual (English/Swahili) via a client-side locale context with JSON dictionaries. PWA enabled (manifest, service worker, offline page, install prompt). Static data fallback so the site still works when the API is down (bundled snapshot + IndexedDB cache).
+- Constraints: `output: "export"` in next.config.ts (fully static /out folder for IPFS hosting); images unoptimized; trailingSlash true; no server-side code in the public site; i18n done client-side (no server routing); PGP encryption must happen in the browser BEFORE any data leaves the device (openpgp v5); do not log or store submitter IPs.
+- Expected behavior: Home page shows map + latest cases + case count; /persons/ lists all cases with search; /persons/{id}/ shows a full profile (photo, age, gender, status, last-seen, circumstances, map); /submit/ encrypts the report with the server public key and POSTs { encrypted_blob } to the API; site works offline after first visit (service worker cache + IndexedDB); language switch EN/SW persists in localStorage.
+- Files to modify: package.json, next.config.ts, tsconfig.json, tailwind.config.ts, postcss.config.mjs, .eslintrc.json, src/lib/{types.ts,api.ts,ipfs.ts,pgp.ts,idb.ts}, src/i18n/{I18nProvider.tsx,locales/en.json,locales/sw.json}, src/components/{MapView.tsx,PersonCard.tsx,PersonList.tsx,SearchBar.tsx,Navbar.tsx,LanguageSwitcher.tsx,Footer.tsx,PWAInstallPrompt.tsx}, src/app/{layout.tsx,page.tsx,globals.css}, src/app/persons/page.tsx, src/app/persons/[id]/page.tsx, src/app/submit/page.tsx, src/app/about/page.tsx, public/{manifest.json,sw.js,offline.html,icons/*}, data/fallback-persons.json
+
+2. Decentralized Deployment Pipeline (infor.md PART 2)
+- Goal: Scripts to publish the static build to IPFS via Pinata, update an ENS domain contenthash, archive the site permanently on Arweave, and a GitHub Actions workflow that runs all of them on every push to main.
+- Constraints: deploy-ipfs.mjs uses the Pinata HTTP API (Bearer JWT) and pins the whole /out directory; update-ens.mjs uses ethers.js with a deployer private key (never commit it); archive-arweave.mjs uses the arweave npm package with a wallet JSON file; CI reads secrets from GitHub secrets.
+- Expected behavior: `npm run build && npm run deploy:ipfs` pins the site and prints/logs the CID; ENS script sets the contenthash to ipfs://<cid>; Arweave script uploads the build and logs the tx id; GitHub Actions does all three automatically.
+- Files to modify: scripts/deploy-ipfs.mjs, scripts/update-ens.mjs, scripts/archive-arweave.mjs, .github/workflows/deploy.yml, .env.example
+
+3. PostgreSQL Schema (infor.md PART 3)
+- Goal: Full initial migration for the registry database: locations, persons (with draft/published workflow), tip_reports (encrypted, verified workflow), admin_users (TOTP), contributors, audit_log; useful reporting views; optional row-level security hardening.
+- Constraints: UUID primary keys (gen_random_uuid()), PostGIS optional but lat/lng always stored numerically, pg_trgm + full-text search support, updated_at trigger, indexes for status/date/name search.
+- Expected behavior: `psql -f migrations/001_initial.sql` against the postgis/postgis:15-3.4 container creates the complete schema; views power the public API; RLS (optional section) restricts tip_reports.
+- Files to modify: migrations/001_initial.sql
+
+4. FastAPI Backend (infor.md PARTS 4, 7.4, 12.2, 12.3, 13.7)
+- Goal: API serving persons (paginated + search + fallback-friendly), stats, health; public POST /api/reports that stores ONLY encrypted blobs; admin auth (username + password + TOTP, Redis-backed sessions, audit logging); report verification workflow endpoints (list, decrypt, verify, reject, publish → creates person/location rows); OSINT review endpoints.
+- Constraints: asyncpg connection pool; CORS open for the static site; the server never sees plaintext reports at ingest time; decryption happens only through the admin endpoint using the PGP private key kept off the public site; every admin action writes to audit_log.
+- Expected behavior: GET /api/persons matches the frontend PaginatedResponse<Person> shape; POST /api/reports accepts { encrypted_blob, source, sender_hint? }; admin endpoints require a Bearer session token issued after password+TOTP verification.
+- Files to modify: api/main.py, api/auth.py, api/verification.py, api/osint.py, api/requirements.txt, api/Dockerfile, api/keys/.gitkeep
+
+5. Nightly Snapshot Pipeline (infor.md PART 5)
+- Goal: A cron-driven script that exports the published registry to JSON, writes it into the static site data folder, rebuilds, and pins the snapshot to IPFS + Arweave so a tamper-proof historical copy always exists.
+- Constraints: uses psql json_agg export, jq for validation, curl to Pinata, node for Arweave; safe to run unattended (set -euo pipefail); logs every snapshot CID.
+- Expected behavior: `scripts/export_snapshot.sh` produces out/snapshot.json, pins it, appends the CID to snapshots.log; crontab entry runs it every night.
+- Files to modify: scripts/export_snapshot.sh, README.md (cron instructions)
+
+6. Signal Bot for Anonymous Tips (infor.md PART 11)
+- Goal: A Python service that connects to signal-cli-rest-api, receives tips over Signal, encrypts them with the server PGP public key, and forwards them to POST /api/reports with source=signal; replies with instructions and STOP handling; never stores plaintext or phone numbers in cleartext.
+- Constraints: polls /v1/receive for a configurable number; rate-limits per sender; hashes sender numbers (SHA-256, truncated) before sending to the API; PGP via the pgpy library; runs in Docker.
+- Expected behavior: tipster sends "HELP" → gets instructions; tip text → encrypted and stored; "STOP" → sender is ignored; bot replies confirm receipt without exposing data.
+- Files to modify: bot/signal_bot.py, bot/requirements.txt, bot/Dockerfile, docker-compose.signal.yml, bot/keys/.gitkeep
+
+7. Admin Verification Dashboard (infor.md PART 12)
+- Goal: Separate Next.js (TypeScript + Tailwind) admin app with login (password + TOTP), a stats dashboard, the encrypted-reports review queue (decrypt → verify/reject → publish as a public case), person records CRUD, OSINT match review, and an audit trail page.
+- Constraints: token kept in localStorage, attached as Bearer; client-side auth guard in the layout; all admin data comes from the FastAPI admin endpoints; no PGP private key ever lives in the dashboard — decryption happens server-side.
+- Expected behavior: /login exchanges credentials for a session token; /dashboard shows pending reports + case stats; /reports/{id} shows the decrypted report with Verify / Reject / Publish actions; /persons lists and creates cases; /osint reviews auto-matches; /audit shows the audit log.
+- Files to modify: admin/package.json, admin/next.config.mjs, admin/tsconfig.json, admin/tailwind.config.ts, admin/postcss.config.mjs, admin/app/layout.tsx, admin/app/login/page.tsx, admin/app/dashboard/page.tsx, admin/app/reports/page.tsx, admin/app/reports/[id]/page.tsx, admin/app/persons/page.tsx, admin/app/osint/page.tsx, admin/app/audit/page.tsx, admin/lib/api.ts
+
+8. Automated OSINT Enrichment (infor.md PART 13)
+- Goal: Celery worker + beat that (a) scans GDELT and Google News RSS every 6h for Tanzania abduction/disappearance coverage, (b) stores new articles in osint_matches, (c) geocodes missing locations via Nominatim every 12h, (d) fuzzy-matches person names against new articles nightly (rapidfuzz ≥ 70), (e) sends a daily Signal digest of new potential matches to admin numbers at 07:00 UTC.
+- Constraints: deduplication by source_url; reviewed flag separates machine matches from human-approved ones; admin review endpoint lets the dashboard approve/reject matches; Nominatim requires a proper User-Agent.
+- Expected behavior: `celery -A osint.celery_app worker/beat` runs the schedule; matches appear in the admin OSINT queue and in the daily Signal alert.
+- Files to modify: migrations/002_osint.sql, osint/celery_app.py, osint/tasks.py, osint/requirements.txt, osint/Dockerfile
+
+9. Full-Stack Orchestration + Documentation (infor.md PARTS 14, 15)
+- Goal: One docker-compose.yml running postgres(+PostGIS), redis, FastAPI, signal-cli-rest-api, signal-bot, celery worker + beat, and a Tor hidden service; README with setup, key generation, deployment checklist, and safety guidance.
+- Constraints: services bind to 127.0.0.1 only; migrations auto-applied via docker-entrypoint-initdb.d; bot mounts PGP public key read-only; torrc for the .onion mirror.
+- Expected behavior: `docker compose up` brings the full stack up locally; checklist matches PART 15 of the spec.
+- Files to modify: docker-compose.yml, tor/torrc, README.md
+
+10. Verification & Reiteration
+- Goal: Prove everything works: npm install + npm run build (static export) for the public site and the admin app; python -m py_compile for every backend module; re-read created files against infor.md.
+- Constraints: build must produce out/ with manifest.json, sw.js, offline.html; no TypeScript errors; no Python syntax errors.
+- Expected behavior: all checks pass; any failing item gets fixed and re-run (increase parallelism gradually after the first clean pass).
+- Files to modify: any file failing verification
+
+11. VERIFICATION STATUS (2026-09-11)
+- npm install (root + admin): DONE
+- npm run build (public site, output: "export"): PASS — out/ generated (10 pages incl. 3 SSG person profiles; manifest.json, sw.js, offline.html, icons, keys present)
+- npm run build (admin dashboard): PASS — 9 routes compiled (login, dashboard, reports, reports/[id], persons, osint, audit)
+- npx tsc --noEmit (root): PASS
+- npx tsc --noEmit (admin): PASS
+- python -m py_compile (api/, bot/, osint/): PASS
+- JSON validity (manifest, en.json, sw.json, fallback-persons.json): PASS
+- Notable adaptations vs spec:
+  * next.config.ts → next.config.mjs (Next 14 does not support TS config; Next 15 does)
+  * data/fallback-persons.json → src/data/ (so the "@/*" → "./src/*" alias resolves it)
+  * MapView lazy-imports Leaflet inside useEffect (leaflet touches window at import time → would break server prerender)
+  * eslint.ignoreDuringBuilds = true (a stray machine-wide C:\.eslintrc.cjs breaks `next lint`; lint stays available via `npm run lint`)
+  * headers() kept as reference config only (Next emits a warning: headers aren't applied with output: "export"; they must be set by the CDN/gateway — documented in next.config.mjs)
+- REMAINING MANUAL STEPS (require real secrets / air-gapped work, see README):
+  * Generate PGP keypair → place server-pub.asc in public/keys, bot/keys; server-priv.asc in api/keys
+  * Set PINATA_JWT / ENS_PRIVATE_KEY / ARWEAVE_WALLET and run npm run deploy:all
+  * Register the Signal bot number; create the first admin user (bcrypt + TOTP)
+  * Ship drafts → verify → publish real cases from the admin queue
+

@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# builds
+.next/
+out/
+build/
+
+# env / secrets — NEVER commit these
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+wallet.json
+arweave-key*.json
+api/keys/server-priv.asc
+api/keys/server-pub.asc
+bot/keys/server-pub.asc
+tor/hostname
+
+# snapshots
+snapshots.log
+snapshot*.json
+
+# python
+__pycache__/
+*.py[cod]
+
+# misc
+.DS_Store
+*.pnp
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local build/test logs
+build-out.log
+build-err.log
+dev-server.log
+admin-build.log
+admin-build-err.log
+
+# deploy artifacts written by scripts/
+deploy-info.json
+arweave-info.json

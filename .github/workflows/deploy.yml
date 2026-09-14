@@ -1,0 +1,70 @@
+# .github/workflows/deploy.yml
+# PART 2.4 — CI/CD: build the static site and push it to IPFS, ENS and Arweave.
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static site (output: export → out/)
+        run: npm run build
+
+      - name: Pin to IPFS (Pinata)
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+        run: node scripts/deploy-ipfs.mjs
+
+      - name: Rebuild so the footer embeds the fresh IPFS CID
+        run: npm run build
+
+      - name: Repin the final build (CID changes because of the embedded CID)
+        env:
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+        run: node scripts/deploy-ipfs.mjs
+
+      - name: Update ENS contenthash
+        if: ${{ env.ENS_PRIVATE_KEY != '' }}
+        env:
+          ENS_PRIVATE_KEY: ${{ secrets.ENS_PRIVATE_KEY }}
+          ENS_DOMAIN: ${{ secrets.ENS_DOMAIN }}
+          ENS_PROVIDER_URL: ${{ secrets.ENS_PROVIDER_URL }}
+        run: node scripts/update-ens.mjs
+
+      - name: Archive permanently on Arweave
+        if: ${{ env.ARWEAVE_WALLET != '' }}
+        env:
+          ARWEAVE_WALLET: ${{ secrets.ARWEAVE_WALLET }}
+          ARWEAVE_WALLET_PATH: ./arweave-wallet.json
+        run: |
+          printf '%s' "$ARWEAVE_WALLET" > arweave-wallet.json
+          node scripts/archive-arweave.mjs
+
+      - name: Publish deployment info as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-info
+          path: |
+            deploy-info.json
+            arweave-info.json
+          if-no-files-found: ignore
