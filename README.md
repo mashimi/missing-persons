@@ -9,6 +9,7 @@
 ![Arweave](https://img.shields.io/badge/archive-Arweave-2D5B5E)
 ![Tor](https://img.shields.io/badge/mirror-.onion-7D4698)
 ![PWA](https://img.shields.io/badge/PWA-offline--ready-5A0FC8)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 A **censorship-resistant**, civil-society registry that documents enforced
 disappearances in Tanzania — built so that no single server, domain,
@@ -551,7 +552,9 @@ live.
 ## 20. Contributing & security
 
 - **Issues / PRs are welcome** — for code, tests, translations
-  (especially Swahili), and documentation.
+  (especially Swahili), and documentation. See
+  [CONTRIBUTING.md](CONTRIBUTING.md) for setup, coding standards, and the
+  project's safety rules.
 - **Do not post sensitive case information or tipster details in GitHub
   issues.** Case data flows only through the encrypted channels described
   in §10.
@@ -565,11 +568,14 @@ live.
 
 ## 21. License
 
-A license has not been selected yet — all rights are reserved by the
-maintainers until one is added. The intended spirit is that human-rights
-organizations, mirrors, and researchers may reuse the software and data
-freely for non-commercial documentation and advocacy; contact the
-maintainers for anything beyond that.
+Released under the [MIT License](LICENSE) — chosen so that human-rights
+organizations, mirrors, volunteers, and researchers can freely reuse the
+software and data for documentation and advocacy.
+
+> The MIT license covers the **code** in this repository. Published case
+> data (names, photos, circumstances of real people) is documented in the
+> interest of the public record and the persons' families — reuse it
+> respectfully and honour family consent and removal requests.
 
 ---
 
